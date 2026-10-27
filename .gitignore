@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Pipeline outputs, model weights and raw media are not versioned
+outputs/
+runs/
+weights/
+*.pt
+*.onnx
+*.npy
+*.npz
+*.mp4
+*.MP4
+*.mov
+*.MOV
+*.avi
+*.AVI
+.DS_Store

@@ -1,0 +1,11 @@
+# Versions used to produce the published dataset (Python 3.13).
+ultralytics==8.4.33
+torch>=2.4
+numpy==2.4.4
+pandas==3.0.1
+opencv-python==4.13.0.*
+shapely==2.1.2
+scipy==1.17.1
+pyyaml==6.0.3
+matplotlib==3.10.8
+pytest>=8

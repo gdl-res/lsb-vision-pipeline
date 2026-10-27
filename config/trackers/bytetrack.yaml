@@ -1,0 +1,19 @@
+# ByteTrack -- locked v1 default (SPECIFICATION.md 26.1).
+#
+# VERBATIM copy of the config shipped with ultralytics 8.4.33
+# (ultralytics/cfg/trackers/bytetrack.yaml). It is vendored here so the v1
+# association parameters are versioned with the code and recorded in
+# provenance instead of drifting silently with an ultralytics upgrade.
+#
+# DO NOT tune these values: every dataset released as v1 was tracked with
+# them, and tests/test_larva_trackers.py asserts this file still matches the
+# installed ultralytics defaults key-for-key. Tune a copy and pass it with
+# --tracker-config instead.
+
+tracker_type: bytetrack # (str) tracker backend
+track_high_thresh: 0.25 # (float) first-stage association threshold
+track_low_thresh: 0.1 # (float) second-stage threshold for low-score detections
+new_track_thresh: 0.25 # (float) start a new track if no match >= this
+track_buffer: 30 # (int) frames a lost track is kept alive
+match_thresh: 0.8 # (float) association similarity threshold
+fuse_score: True # (bool) fuse detection score with motion/IoU when matching

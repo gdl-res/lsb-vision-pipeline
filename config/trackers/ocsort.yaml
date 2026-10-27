@@ -1,0 +1,30 @@
+# OC-SORT -- selectable alternative (SPECIFICATION.md 26.1).
+#
+# Consumed by scripts/larva_trackers.py:OCSort, NOT by ultralytics: ultralytics
+# 8.4.33 ships only ByteTrack and BoT-SORT and raises an AssertionError for any
+# other tracker_type, so OC-SORT runs on predict() output through our own
+# vendored implementation.
+#
+# Thresholds are aligned with the ByteTrack config where the two algorithms
+# have a comparable knob (det_thresh <-> track_high_thresh, max_age <->
+# track_buffer) so a cross-tracker comparison isolates the association
+# algorithm.
+
+tracker_type: ocsort # (str) tracker backend
+det_thresh: 0.25 # (float) detections below this never start a track
+max_age: 30 # (int) frames a lost track stays recoverable (= track_buffer)
+min_hits: 1 # (int) hits before a track emits an id -- see note below
+iou_threshold: 0.3 # (float) min IoU for an association
+delta_t: 3 # (int) frame lag used to estimate a track's direction (OCM)
+inertia: 0.2 # (float) weight of the direction-consistency term (OCM)
+use_byte: false # (bool) BYTE-style second pass over low-score detections
+
+# min_hits deviates from OC-SORT's usual 3, for parity with ByteTrack. With at
+# most one larva per crop, withholding an id for the first three frames of every
+# track would leave larva_track_id empty exactly when select_primary_larva
+# (SPECIFICATION.md 6) needs it to apply the "same_track_id" continuity rule. At
+# min_hits: 1 a track is confirmed on its second frame and emits no id on its
+# birth frame -- which is exactly what ultralytics' ByteTrack does (a new
+# STrack has is_activated=False unless it is born on frame 1), so swapping
+# trackers does not change confirmation semantics. Spurious-track rejection is
+# handled downstream by the hysteresis gate instead.

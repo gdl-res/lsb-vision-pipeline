@@ -1,0 +1,35 @@
+# BoT-SORT -- selectable alternative (SPECIFICATION.md 26.1).
+#
+# Based on the config shipped with ultralytics 8.4.33
+# (ultralytics/cfg/trackers/botsort.yaml), with two deliberate deviations
+# documented below. Association thresholds are left at the ByteTrack values so
+# a bytetrack-vs-botsort comparison isolates the association algorithm rather
+# than confounding it with retuned thresholds.
+
+tracker_type: botsort # (str) tracker backend
+track_high_thresh: 0.25 # (float) first-stage association threshold
+track_low_thresh: 0.1 # (float) second-stage threshold for low-score detections
+new_track_thresh: 0.25 # (float) start a new track if no match >= this
+track_buffer: 30 # (int) frames a lost track is kept alive
+match_thresh: 0.8 # (float) association similarity threshold
+fuse_score: True # (bool) fuse detection score with motion/IoU when matching
+
+# BoT-SORT specifics
+#
+# DEVIATION 1 -- gmc_method: ultralytics defaults to sparseOptFlow. Global
+# motion compensation estimates camera egomotion between frames; here the
+# camera is fixed AND the crop window is frozen at frame 0
+# (--detect-petri-first-frame, SPECIFICATION.md 26.1), so there is no egomotion to
+# compensate. Running it would spend compute estimating a transform from the
+# dish surface texture and the larva's own motion, which can feed apparent
+# motion back into the tracker. Disabled.
+gmc_method: none # (str) sparseOptFlow|orb|sift|ecc|none
+
+# DEVIATION 2 -- with_reid stays False (the ultralytics default). Each dish
+# crop holds at most one larva (SPECIFICATION.md 3.2/6), so there is no appearance
+# ambiguity for a ReID model to resolve; it would only add a second network
+# and its download to the pinned environment.
+proximity_thresh: 0.5 # (float) min IoU for a track/detection pair to be ReID candidates
+appearance_thresh: 0.8 # (float) min appearance similarity for ReID
+with_reid: False # (bool) enable the ReID model
+model: auto # (str) ReID model name/path
