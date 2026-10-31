@@ -1,0 +1,40 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "lsb-vision-pipeline: a modular computer-vision architecture for converting controlled multi-arena video assays into behavioral phenotyping data"
+type: software
+version: 1.1.0
+date-released: 2026-10-31
+license: Apache-2.0
+repository-code: "https://github.com/gdl-res/lsb-vision-pipeline"
+keywords:
+  - automated behavioral phenotyping
+  - computer vision
+  - instance segmentation
+  - multi-arena tracking
+  - quality control
+  - FAIR data
+  - Tenebrio molitor
+authors:
+  - family-names: Di Lorenzo
+    given-names: Giovanni
+    email: giovanni.dilorenzo@phd.unipi.it
+    affiliation: "Centro di Ricerca \"Enrico Piaggio\" and Dipartimento di Ingegneria dell'Informazione, University of Pisa"
+  - family-names: Zanzot
+    given-names: Asia
+    affiliation: "Department of Veterinary Sciences, University of Pisa"
+  - family-names: Garabini
+    given-names: Manolo
+    affiliation: "Centro di Ricerca \"Enrico Piaggio\" and Dipartimento di Ingegneria dell'Informazione, University of Pisa"
+  - family-names: Mancini
+    given-names: Simone
+    affiliation: "Department of Veterinary Sciences, University of Pisa"
+  - family-names: Angelini
+    given-names: Franco
+    affiliation: "Centro di Ricerca \"Enrico Piaggio\" and Dipartimento di Ingegneria dell'Informazione, University of Pisa"
+references:
+  - type: dataset
+    title: "Wormstress Tenebrio molitor behavioral phenotyping dataset: derived data"
+    doi: 10.5281/zenodo.23686764
+  - type: dataset
+    title: "Wormstress Tenebrio molitor behavioral phenotyping dataset: raw videos"
+    doi: 10.5281/zenodo.23686766

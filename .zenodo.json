@@ -1,0 +1,50 @@
+{
+  "title": "lsb-vision-pipeline: a modular computer-vision architecture for converting controlled multi-arena video assays into behavioral phenotyping data",
+  "upload_type": "software",
+  "description": "Computer-vision pipeline for automated behavioral phenotyping of Tenebrio molitor larvae in multi-arena Petri-dish assays: Petri detection and arena assignment, larva segmentation and tracking on per-dish crops, Petri-normalised trajectories, kinematics, occupancy heatmaps, behavioral features, quality control and FAIR-structured export with provenance. Version 1.1.0 adds a selectable larva-segmenter backend (Ultralytics YOLO-seg or torchvision Mask R-CNN), segmenter training, and a detection cache with offline replay through the unchanged downstream chain. Model weights are not included.",
+  "license": "Apache-2.0",
+  "access_right": "open",
+  "creators": [
+    {
+      "name": "Di Lorenzo, Giovanni",
+      "affiliation": "University of Pisa"
+    },
+    {
+      "name": "Zanzot, Asia",
+      "affiliation": "University of Pisa"
+    },
+    {
+      "name": "Garabini, Manolo",
+      "affiliation": "University of Pisa"
+    },
+    {
+      "name": "Mancini, Simone",
+      "affiliation": "University of Pisa"
+    },
+    {
+      "name": "Angelini, Franco",
+      "affiliation": "University of Pisa"
+    }
+  ],
+  "keywords": [
+    "automated behavioral phenotyping",
+    "computer vision",
+    "instance segmentation",
+    "multi-arena tracking",
+    "quality control",
+    "FAIR data",
+    "Tenebrio molitor"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "10.5281/zenodo.23686764",
+      "relation": "isSupplementedBy",
+      "resource_type": "dataset"
+    },
+    {
+      "identifier": "10.5281/zenodo.23686766",
+      "relation": "isSupplementedBy",
+      "resource_type": "dataset"
+    }
+  ]
+}

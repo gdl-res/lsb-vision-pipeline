@@ -1,0 +1,4 @@
+# Optional: Mask R-CNN backend and COCO-style validation for alternative segmenters.
+# Install on top of requirements.txt (tested with Python 3.13).
+torchvision>=0.19
+pycocotools==2.0.11

@@ -1756,10 +1756,33 @@ wasserstein_*:         DEFERRED to a post-processing step; written as NaN in v1.
                        heatmap, compare per-dish heatmaps against it.
 ```
 
+## 26.5 Selectable segmenter backend (v1.1, opt-in)
 
-{
-  "attribution": {
-    "commit": "",
-    "pr": ""
-  }
-}
+The production larva segmenter is unchanged and remains the default:
+`weights/larvae/lsb_yolo11s_20260630v1.pt` (YOLO11s-seg trained on full tray
+images). A default run reproduces v1 byte-identically.
+
+The detection layer can be swapped through `scripts/segmenters.py`
+(`load_segmenter(spec).detect_batch(crops)` returning the same `LarvaDetection`
+objects; centroid and area are always computed from the polygon, exactly as in
+the YOLO path). Segmenters are declared in `config/segmenters.yaml`
+and selected with `scripts/cache_detections.py --segmenter NAME`;
+`scripts/replay_trackers.py` then runs the unchanged downstream chain (§6
+selection + gate, §26.3, QC). Backends: `ultralytics` (any YOLO-seg) and
+`torchvision_maskrcnn` (Mask R-CNN R50-FPN v2).
+
+Operational caveats:
+
+```text
+domain:   validate a segmenter on Petri crops, the input the pipeline feeds it;
+          a model trained on full tray images can score well there and still
+          return fragmented or missing masks on crops at --larva-imgsz 640
+lockout:  a segmenter sensitive enough to detect the operator's hand or vial
+          while the larva is placed can make the §6 jump gate anchor there and
+          reject the real larva (> max_jump_cap_px away) for the rest of the
+          video; a re-acquisition rule is needed before such a model becomes
+          the default
+```
+
+Switching the default segmenter is a version bump (re-release of every
+dataset), not a silent change.
