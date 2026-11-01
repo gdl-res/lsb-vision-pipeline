@@ -482,7 +482,7 @@ def build_larva_row(ids: dict, frame_idx: int, time_s: float, dg: DishGeom,
     """Build one larva_tracks row. Returns (row, mask_polygon_crop|None).
 
     `morph` is an optional precomputed polygon_morphology() result. It exists so
-    an offline replay (scripts/replay_trackers.py) can reuse this row builder --
+    an offline replay can reuse this row builder --
     and therefore the exact LARVA_COLUMNS contract -- from a detection cache that
     stores morphology scalars instead of the polygons themselves. Left at None
     (every in-pipeline caller) the behaviour is unchanged: morphology is computed

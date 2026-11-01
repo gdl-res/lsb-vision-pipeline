@@ -319,11 +319,9 @@ of hijacking the established track. The growth term is additive, not
 multiplicative — an earlier multiplicative version let a ~200px jump through
 after only 3-4 missing frames, far faster than a larva can plausibly crawl,
 which reopened the exact artifact-vs-larva oscillation this gate exists to
-stop. Added after batch analysis showed ~85% of track-ID switches occurred
-with no preceding missing-detection gap: the tracker was flipping onto a
-spurious second detection (a dish-surface artifact or a segmentation mask
-fragment) whenever that was the *only* detection in a
-frame.
+stop. It keeps the tracker from flipping onto a spurious second detection
+(a dish-surface artifact or a segmentation mask fragment) whenever that is the
+*only* detection in a frame.
 
 Do not silently discard ambiguous detections. Flag them.
 
@@ -1248,28 +1246,6 @@ Default:
 --on-failure skip
 ```
 
-## 18.2 Dataset Split Processor
-
-Expected command:
-
-```bash
-python scripts/process_dataset_splits.py \
-  --dataset My_First_Project_LSB.v2i.yolov11 \
-  --out My_First_Project_LSB_petri_crops \
-  --petri-model runs/detect/petri_detector/weights/best.pt \
-  --rows 3 \
-  --cols 2 \
-  --margin 0.05
-```
-
-It must process available splits:
-
-```text
-train
-valid
-test
-```
-
 ## 18.3 Video Tracker
 
 Expected command:
@@ -1361,27 +1337,6 @@ a confound check; `--min-valid-fraction` excludes poorly-tracked dishes from the
 behavioral contrasts only. The report embeds the §23 caveats — notably that
 dishes within a tray are pseudo-replicates (the tray/video is the experimental
 unit) and the comparisons are uncorrected.
-
-## 18.7 Model Validation
-
-Quantifies a trained YOLO model on a held-out labeled split (the testing
-requirement of §17/§20 made runnable). Rewrites the Roboflow `data.yaml`'s
-absolute paths to the dataset's real location, runs `ultralytics` `val`, and
-records precision/recall/mAP@50/mAP@50-95 for boxes and masks.
-
-```bash
-python scripts/validate_models.py \
-  --model weights/larvae/lsb_yolo11s_20260630v1.pt \
-  --dataset data4evaluation/dataset_to_evaluate/lsb_20260629_1432imgs_v1.yolov11 \
-  --split test \
-  --imgsz 1024 \
-  --out outputs/model_validation
-```
-
-Writes `validation_metrics.csv`/`.json`, `validation_report.md` and provenance
-(with model SHA-256). Single-class datasets match by class id, so a model whose
-class name differs from the dataset's (e.g. `petri` vs `pietrie`, `larva` vs
-`Tenebrio molitor`) still validates correctly.
 
 ---
 
@@ -1551,41 +1506,6 @@ The system produces objective behavioral proxies. Interpretation requires experi
 
 # 24. Example Final Workflow
 
-## Train Petri Detector
-
-```bash
-yolo detect train \
-  model=yolo11n.pt \
-  data=petri_dataset.yaml \
-  imgsz=1280 \
-  epochs=100 \
-  batch=8
-```
-
-## Crop Full Dataset into Petri Images
-
-```bash
-python scripts/process_dataset_splits.py \
-  --dataset My_First_Project_LSB.v2i.yolov11 \
-  --out My_First_Project_LSB_petri_crops \
-  --petri-model runs/detect/petri_detector/weights/best.pt \
-  --rows 3 \
-  --cols 2 \
-  --margin 0.05 \
-  --conf 0.30
-```
-
-## Train Larva Segmentation on Petri Crops
-
-```bash
-yolo segment train \
-  model=yolo11s-seg.pt \
-  data=My_First_Project_LSB_petri_crops/data.yaml \
-  imgsz=1024 \
-  epochs=100 \
-  batch=8
-```
-
 ## Track Larvae in Video
 
 ```bash
@@ -1726,7 +1646,7 @@ proxy. When the fit is valid, `petri_cx/cy/radius` and larva normalization use i
 the box otherwise. The raw box stays in `petri_x1..petri_h`; the fit is recorded
 in `petri_geometry_source` + `petri_fit_cx/cy/a/b/valid`. Default is still `box`
 (v1 reproducibility). Note: the petri model's box size is imgsz-sensitive
-(matches the dish at 640, ~24% smaller at 1280), so `--petri-imgsz` is pinned
+(it matches the dish at 640), so `--petri-imgsz` is pinned
 (default 640) — at the pinned imgsz the box geometry already matches the dish, so
 circlefit's value is imgsz-robustness + measured ellipticity, not bias fixing.
 
@@ -1755,34 +1675,3 @@ wasserstein_*:         DEFERRED to a post-processing step; written as NaN in v1.
                        dishes within the same experiment_id into a probability
                        heatmap, compare per-dish heatmaps against it.
 ```
-
-## 26.5 Selectable segmenter backend (v1.1, opt-in)
-
-The production larva segmenter is unchanged and remains the default:
-`weights/larvae/lsb_yolo11s_20260630v1.pt` (YOLO11s-seg trained on full tray
-images). A default run reproduces v1 byte-identically.
-
-The detection layer can be swapped through `scripts/segmenters.py`
-(`load_segmenter(spec).detect_batch(crops)` returning the same `LarvaDetection`
-objects; centroid and area are always computed from the polygon, exactly as in
-the YOLO path). Segmenters are declared in `config/segmenters.yaml`
-and selected with `scripts/cache_detections.py --segmenter NAME`;
-`scripts/replay_trackers.py` then runs the unchanged downstream chain (§6
-selection + gate, §26.3, QC). Backends: `ultralytics` (any YOLO-seg) and
-`torchvision_maskrcnn` (Mask R-CNN R50-FPN v2).
-
-Operational caveats:
-
-```text
-domain:   validate a segmenter on Petri crops, the input the pipeline feeds it;
-          a model trained on full tray images can score well there and still
-          return fragmented or missing masks on crops at --larva-imgsz 640
-lockout:  a segmenter sensitive enough to detect the operator's hand or vial
-          while the larva is placed can make the §6 jump gate anchor there and
-          reject the real larva (> max_jump_cap_px away) for the rest of the
-          video; a re-acquisition rule is needed before such a model becomes
-          the default
-```
-
-Switching the default segmenter is a version bump (re-release of every
-dataset), not a silent change.

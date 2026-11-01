@@ -1,7 +1,7 @@
 {
   "title": "lsb-vision-pipeline: a modular computer-vision architecture for converting controlled multi-arena video assays into behavioral phenotyping data",
   "upload_type": "software",
-  "description": "Computer-vision pipeline for automated behavioral phenotyping of Tenebrio molitor larvae in multi-arena Petri-dish assays: Petri detection and arena assignment, larva segmentation and tracking on per-dish crops, Petri-normalised trajectories, kinematics, occupancy heatmaps, behavioral features, quality control and FAIR-structured export with provenance. Version 1.1.0 adds a selectable larva-segmenter backend (Ultralytics YOLO-seg or torchvision Mask R-CNN), segmenter training, and a detection cache with offline replay through the unchanged downstream chain. Model weights are not included.",
+  "description": "Computer-vision pipeline for automated behavioral phenotyping of Tenebrio molitor larvae in multi-arena Petri-dish assays: Petri detection and arena assignment, larva segmentation and tracking on per-dish crops, Petri-normalised trajectories, kinematics, occupancy heatmaps, behavioral features, quality control and FAIR-structured export with provenance. Model weights are not included.",
   "license": "Apache-2.0",
   "access_right": "open",
   "creators": [

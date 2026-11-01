@@ -30,8 +30,6 @@ git clone <this repository>
 cd lsb-vision-pipeline
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-# optional: Mask R-CNN backend and COCO-style validation for alternative segmenters
-pip install -r requirements-segmenters.txt
 ```
 
 Install a CUDA build of PyTorch for GPU inference (see pytorch.org). CPU inference works but is slow.
@@ -46,11 +44,6 @@ Two Ultralytics YOLO models are required. Neither is included in this repository
 | Larva segmenter (`--larva-model`) | instance segmentation on square Petri crops | `larva` |
 
 Both are single-class models and are matched by class index, so the class name itself does not matter.
-
-Validate the larva segmenter on **Petri crops**, the input the pipeline actually feeds it, not only
-on full tray images: a model trained on full trays can score well there and still return fragmented
-or missing masks on crops. Training the segmenter on crops (`process_dataset_splits.py`, below)
-avoids this.
 
 ## Quick start
 
@@ -150,55 +143,6 @@ Each stage can also be run on its own:
 | `generate_fair_metadata.py` | README, data dictionary, licences, dataset description |
 | `generate_report.py` | HTML/Markdown visual report |
 | `parse_filenames.py` | draft experiment metadata from filenames (opt-in, needs human review) |
-
-There are also three model-preparation tools:
-
-- `crop_petris_yolo_seg.py` and `process_dataset_splits.py` crop full-tray YOLO-seg datasets into
-  per-dish training images, remapping the labels.
-- `validate_models.py` computes precision, recall and mAP on a held-out split.
-
-## Using a different segmenter
-
-The larva segmenter can be swapped while every downstream step (primary-larva selection, continuity
-gate, interpolation, smoothing, kinematics, features, QC) stays identical. The default pipeline is
-unchanged.
-
-1. Run the pipeline once on the videos (`run_pipeline.py`); its output supplies the frozen arena
-   geometry. Set the paths in `config/replay.yaml` and `config/segmenters.yaml`.
-2. Declare segmenters in `config/segmenters.yaml` (`backend: ultralytics` for any YOLO-seg
-   checkpoint, `backend: torchvision_maskrcnn` for Mask R-CNN R50-FPN v2).
-3. Optionally train them:
-
-   ```bash
-   # Petri-crop training set from a full-tray YOLO-seg dataset
-   python scripts/process_dataset_splits.py --dataset data/larva_dataset --out outputs/crop_dataset \
-     --petri-model path/to/petri.pt --rows 3 --cols 2 --margin 0.05
-   python scripts/train_segmenter.py --config config/segmenters.yaml --segmenter yolo11s_crop
-   python scripts/train_maskrcnn.py --config config/segmenters.yaml
-   ```
-
-4. Cache raw detections and replay them through the unchanged chain:
-
-   ```bash
-   python scripts/cache_detections.py --config config/segmenters.yaml --segmenter yolo11s_crop --skip-existing
-   python scripts/replay_trackers.py --config config/segmenters.yaml --config-prefix yolo11s_crop \
-     --methods bytetrack --gates gate_on
-   ```
-
-   The output folder `<segmenter>__bytetrack__gate_on/` holds `larva_tracks.csv`,
-   `larva_kinematics.csv`, `features/` and `qc_summary.csv` in the pipeline's schema. With the
-   default segmenter and `bytetrack__gate_on` the replay reproduces the pipeline's own tables.
-
-`replay_trackers.py --config config/replay.yaml` also compares association methods (ByteTrack,
-BoT-SORT, OC-SORT, none) and the continuity gate on and off over one detection cache.
-
-## Known limitations
-
-- A larva segmenter trained on full tray images detects larvae less reliably on Petri crops, which
-  biases absolute speed, distance and mask area; spatial-occupancy features are the least affected.
-- With a crop-trained segmenter, the continuity gate can anchor on the operator's hand or vial
-  while the larva is placed in the dish and then reject the real larva. A re-acquisition rule is
-  needed before such a model becomes the default.
 
 ## Tests
 
