@@ -139,3 +139,22 @@ def test_report_works_without_qc(tmp_path):
     # no qc table -> verdict unknown, but report still builds
     assert all(r["verdict"] == "?" for r in rows)
     gr.render_html(data, rows, tmp_path, embed=True)
+
+
+def test_treatment_falls_back_to_experiment_metadata(tmp_path):
+    import pandas as pd
+    _make_dataset(tmp_path, with_qc=False)
+    pd.DataFrame([{"video_id": "v1", "dish_id": 1, "treatment": "control"},
+                  {"video_id": "v1", "dish_id": 2, "treatment": "heat"}]
+                 ).to_csv(tmp_path / "metadata" / "experiment_metadata.csv",
+                          index=False)
+    rows = gr.build_rows(gr.load_dataset(tmp_path))
+    assert [r["treatment"] for r in rows] == ["control", "heat"]
+
+
+def test_header_only_experiment_metadata_gives_dash(tmp_path):
+    _make_dataset(tmp_path, with_qc=False)
+    (tmp_path / "metadata" / "experiment_metadata.csv").write_text(
+        "video_id,dish_id,treatment\n")
+    rows = gr.build_rows(gr.load_dataset(tmp_path))
+    assert all(r["treatment"] == "—" for r in rows)

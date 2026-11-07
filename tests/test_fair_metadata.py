@@ -159,3 +159,33 @@ def test_processing_config_defaults_to_bytetrack(tmp_path):
     cfg = yaml.safe_load((tmp_path / "processing_config.yaml").read_text())
     assert cfg["larva_tracking"]["tracker"] == "bytetrack"
     assert cfg["larva_tracking"]["tracker_params"]["track_buffer"] == 30
+
+
+def test_processing_config_records_models_gate_and_version(tmp_path):
+    pytest.importorskip("yaml")
+    assert fm.main(["--out", str(tmp_path), "--no-pip-freeze",
+                    "--larva-model", "weights/larvae/some_model.pt",
+                    "--reacquire-after-s", "0"]) == 0
+    import yaml
+    cfg = yaml.safe_load((tmp_path / "processing_config.yaml").read_text())
+    assert cfg["pipeline_version"] == "v1.2"
+    t = cfg["larva_tracking"]
+    assert t["larva_model"] == "some_model.pt"
+    assert t["max_jump_px"] == 60.0 and t["max_jump_cap_px"] == 240.0
+    assert t["reacquire_after_s"] is None      # 0 disables -> recorded as off
+
+
+def test_model_cards_copied_when_known(tmp_path):
+    cards = tmp_path / "cards"
+    cards.mkdir()
+    (cards / "crop.md").write_text("# Crop\n- model name: `crop_v1.pt`\n")
+    out = tmp_path / "out"
+    out.mkdir()
+    fm.write_model_cards(out, larva_model=Path("w/crop_v1.pt"),
+                         petri_model=Path("w/unknown.pt"), cards_dir=cards)
+    assert (out / "larva_segmenter_model_card.md").read_text().startswith(
+        "# Crop")
+    # no card for the petri model -> blank template, still present
+    assert "- model name:\n" in (out / "petri_detector_model_card.md"
+                                  ).read_text()
+

@@ -1,4 +1,4 @@
-# wormstress-vision — pipeline specification
+# lsb-vision-pipeline — pipeline specification
 
 Design specification and data contract of the pipeline. Section numbers are referenced from
 the source code as `SPECIFICATION.md <section>`.
@@ -306,6 +306,7 @@ largest_area
 no_detection
 ambiguous
 rejected_implausible
+reacquired
 ```
 
 **Hysteresis (`--max-jump-px`/`--max-jump-growth-px`/`--max-jump-cap-px`,
@@ -322,6 +323,21 @@ which reopened the exact artifact-vs-larva oscillation this gate exists to
 stop. It keeps the tracker from flipping onto a spurious second detection
 (a dish-surface artifact or a segmentation mask fragment) whenever that is the
 *only* detection in a frame.
+
+**Re-acquisition (`--reacquire-after-s`, v1.2 default 5 s; 0 disables):** the gate
+compares only against the last *accepted* centroid, so if it anchors on a
+transient non-larva -- the operator's hand or vial at the crop edge while the
+larva is placed -- every later detection of the real larva (> cap away) is
+rejected, sometimes for the whole video ("lockout"). `reacquire_step` follows
+the rejected lone detections as a *challenger*: if they stay spatially continuous (same raw track id, or
+within the gate's own jump limit of each other) for `reacquire_after_s`, with
+the anchor never confirmed in between and detections in >= 50% of those
+frames, the challenger becomes primary with `selection_reason = reacquired`.
+Any accepted frame resets the challenger, so the original artifact case (larva
+still being detected) is unaffected. Recommended value 5 s, which removed every
+lockout longer than 10 s on the reference dataset while changing the fewest
+other recordings. Default since v1.2 (§26.6), together with the
+crop-trained segmenter.
 
 Do not silently discard ambiguous detections. Flag them.
 
@@ -547,7 +563,7 @@ Each line:
 
 ```json
 {
-  "dataset_id": "wormstress_v1",
+  "dataset_id": "lsb_tmolitor_v1",
   "experiment_id": "exp_001",
   "video_id": "video_001",
   "frame_idx": 123,
@@ -946,7 +962,7 @@ Use stable identifiers where possible.
 Recommended identifiers:
 
 ```text
-dataset_id: wormstress_tmolitor_v1
+dataset_id: lsb_tmolitor_v1
 experiment_id: exp_YYYYMMDD_condition_batch
 video_id: stable filename stem or UUID
 larva_id: stable within experiment
@@ -1274,6 +1290,8 @@ Important options:
 --tracker-config PATH                # override config/trackers/<tracker>.yaml
 --petri-imgsz INT                    # pinned, default 640
 --larva-imgsz INT                    # pinned, default 640
+--larva-model PATH                   # §26.6 (default crop-trained v1.2 model)
+--reacquire-after-s FLOAT            # §6 / §26.6 (default 5; 0 disables)
 --save-masks
 --save-overlays
 --smoothing-window
@@ -1560,7 +1578,7 @@ This is the foundation for reproducible, FAIR-compliant behavioral monitoring.
 
 ---
 
-# 26. Locked Decisions (v1)
+# 26. Locked Decisions (v1, with v1.1/v1.2 changes)
 
 These defaults are locked for the v1 pipeline. They are hard to change once data
 is written, so they are part of the spec. All are configurable via CLI/config and
@@ -1674,4 +1692,36 @@ wasserstein_*:         DEFERRED to a post-processing step; written as NaN in v1.
                        v1.1 default reference: pool all treatment="control"
                        dishes within the same experiment_id into a probability
                        heatmap, compare per-dish heatmaps against it.
+```
+
+## 26.6 v1.2 defaults: crop-trained segmenter + gate re-acquisition
+
+The v1.2 version bump changes exactly two defaults; everything else in §26 is
+unchanged.
+
+```text
+--larva-model        weights/larvae/lsb_yolo11s_crop_seg_v1.pt
+                     (YOLO11s-seg trained on the pipeline's own Petri crops;
+                     weights not distributed, model card in the v1.2.0
+                     data record, doi:10.5281/zenodo.24015683)
+--reacquire-after-s  5.0   (§6; 0 disables)
+pipeline_version     v1.2  (processing_provenance.jsonl, processing_config.yaml)
+```
+
+Why: the v1 segmenter was trained on full tray images and does not transfer to
+the crops it is fed, which biased absolute speed, distance and mask area.
+Evidence: doi:10.5281/zenodo.24015682 (segmenter comparison) and
+doi:10.5281/zenodo.24015680 (trajectory ground truth).
+
+Consequences:
+
+```text
+re-release:      every v1/v1.1 dataset must be re-tracked; v1 and v1.2 values
+                 (especially speed, distance, mask area) are not interchangeable
+v1 reproduction: --larva-model weights/larvae/lsb_yolo11s_20260630v1.pt
+                 --reacquire-after-s 0
+release record:  processing_config.yaml larva_tracking block records the larva
+                 model, jump-gate parameters and reacquire_after_s; the model
+                 card of each model used is copied from model_cards/ into the
+                 release (generate_fair_metadata.py)
 ```

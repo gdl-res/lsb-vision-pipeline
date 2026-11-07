@@ -247,9 +247,22 @@ def test_batch_fail_fast_aborts(tmp_path, monkeypatch):
 
 def test_preflight_blocks_on_missing_models(tmp_path):
     args = rp.build_parser().parse_args(
-        ["--out", str(tmp_path / "out"), "--videos", str(tmp_path)])
+        ["--out", str(tmp_path / "out"), "--videos", str(tmp_path),
+         "--larva-model", str(tmp_path / "missing.pt")])
     assert args.petri_model is None
     assert rp.preflight([], args) == 2   # petri + larva both missing
+
+
+def test_v12_defaults():
+    """v1.2 (SPECIFICATION.md 26.6): crop-trained larva model + gate re-acquisition."""
+    args = rp.build_parser().parse_args(["--out", "x"])
+    assert args.larva_model.name == "lsb_yolo11s_crop_seg_v1.pt"
+    assert args.reacquire_after_s == 5.0
+    targs = rp.tl.build_parser().parse_args(
+        ["--video", "v.mp4", "--out", "o", "--petri-model", "p.pt"])
+    assert targs.larva_model == args.larva_model
+    assert targs.reacquire_after_s == 5.0
+    assert rp.tl.PIPELINE_VERSION == "v1.2"
 
 
 def test_preflight_passes_with_models_and_no_videos(tmp_path):
@@ -282,7 +295,7 @@ def _make_combined_tables(out):
         for dish in (1, 2):
             cx = 200.0 + (i % 20)
             track_rows.append({
-                "dataset_id": "wormstress_tmolitor_v1", "experiment_id": "exp1",
+                "dataset_id": "lsb_tmolitor_v1", "experiment_id": "exp1",
                 "video_id": "v1", "frame_idx": i, "time_s": i / 10.0,
                 "dish_id": dish, "larva_track_id": dish * 1000 + 1,
                 "valid_detection": True, "larva_conf": 0.8,
@@ -294,7 +307,7 @@ def _make_combined_tables(out):
                 "track_switch": False,
             })
             petri_rows.append({
-                "dataset_id": "wormstress_tmolitor_v1", "experiment_id": "exp1",
+                "dataset_id": "lsb_tmolitor_v1", "experiment_id": "exp1",
                 "video_id": "v1", "frame_idx": i, "time_s": i / 10.0,
                 "dish_id": dish, "petri_cx": 200.0, "petri_cy": 200.0,
                 "petri_radius": 100.0, "petri_valid": True, "petri_conf": 0.9,
@@ -377,3 +390,22 @@ def test_aggregate_skipped_without_metadata(tmp_path):
                   "--heatmap-bins", "30"])     # no --metadata
     assert rc == 0
     assert not (out / "aggregate" / "treatment_contrasts.csv").exists()
+
+
+def test_copy_experiment_metadata_keeps_processed_videos_only(tmp_path):
+    import pandas as pd
+    src = tmp_path / "experiment_metadata.csv"
+    pd.DataFrame([{"video_id": "v1", "dish_id": 1, "treatment": "control"},
+                  {"video_id": "v2", "dish_id": 1, "treatment": "heat"}]
+                 ).to_csv(src, index=False)
+    out = tmp_path / "out"
+    (out / "features").mkdir(parents=True)
+    pd.DataFrame([{"video_id": "v1", "dish_id": 1}]).to_csv(
+        out / "features" / "features_per_video.csv", index=False)
+    assert rp.copy_experiment_metadata(src, out) == 1
+    got = pd.read_csv(out / "metadata" / "experiment_metadata.csv")
+    assert got["video_id"].tolist() == ["v1"]
+    # the FAIR step must not overwrite it with the blank template
+    rp.fm.write_experiment_metadata_template(
+        out / "metadata" / "experiment_metadata.csv")
+    assert len(pd.read_csv(out / "metadata" / "experiment_metadata.csv")) == 1

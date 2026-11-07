@@ -87,7 +87,8 @@ VOCAB = {
                      "outside_petri|area_outlier|ambiguous_detection"),
     "selection_reason": ("single_detection|same_track_id|highest_confidence|"
                          "closest_to_previous|area_filter|largest_area|"
-                         "no_detection|ambiguous|rejected_implausible"),
+                         "no_detection|ambiguous|rejected_implausible|"
+                         "reacquired"),
     "treatment": ("control|sham|heat|cold|starvation|dehydration|"
                   "mechanical_disturbance|light_exposure|crowding|unknown"),
     "petri_detect_policy": "first_frame|every_frame|every_N_frames",
@@ -350,11 +351,19 @@ def tracking_meta(args) -> dict:
         cfg_str = str(cfg_path.relative_to(repo_root))
     except ValueError:  # an override from outside the repo
         cfg_str = str(cfg_path)
-    return {"tracker": tracker,
+    larva_model = getattr(args, "larva_model", None)
+    reacq = getattr(args, "reacquire_after_s", tl.DEFAULT_REACQUIRE_AFTER_S)
+    return {"larva_model": None if larva_model is None else Path(larva_model).name,
+            "tracker": tracker,
             "tracker_config": cfg_str,
             "tracker_params": lt.load_tracker_config(tracker, cfg_path),
             "persist": True, "per_dish_instance": True, "larva_conf": 0.25,
-            "track_id_rule": "dish_id*1000 + raw_yolo_id"}
+            "track_id_rule": "dish_id*1000 + raw_yolo_id",
+            # primary-larva selection gate (SPECIFICATION.md 6)
+            "max_jump_px": getattr(args, "max_jump_px", 60.0),
+            "max_jump_growth_px": getattr(args, "max_jump_growth_px", 5.0),
+            "max_jump_cap_px": getattr(args, "max_jump_cap_px", 240.0),
+            "reacquire_after_s": reacq or None}
 
 
 def write_processing_config(path: Path, smoothing_cfg: Optional[dict] = None,
@@ -368,7 +377,7 @@ def write_processing_config(path: Path, smoothing_cfg: Optional[dict] = None,
                         "per_dish_instance": True, "larva_conf": 0.25,
                         "track_id_rule": "dish_id*1000 + raw_yolo_id"}
     config = {
-        "pipeline_version": "v1",
+        "pipeline_version": tl.PIPELINE_VERSION,
         "locked_decisions_ref": "SPECIFICATION.md section 26",
         "petri_detection": {"rows": 3, "cols": 2, "margin": 0.05,
                             "conf": 0.30, "iou": 0.50,
@@ -681,24 +690,55 @@ def write_license(path: Path, license_name: str, **fields) -> None:
         "release. The dataset_description.json records the license identifier.\n")
 
 
-def write_model_cards(card_dir: Path) -> None:
+MODEL_CARDS_DIR = tl.REPO_ROOT / "model_cards"
+
+
+def find_model_card(model: Optional[Path],
+                    cards_dir: Path = MODEL_CARDS_DIR) -> Optional[Path]:
+    """The repository model card whose `- model name:` line names this file."""
+    if model is None or not cards_dir.is_dir():
+        return None
+    tag = f"- model name: `{Path(model).name}`"
+    for card in sorted(cards_dir.glob("*.md")):
+        if tag in card.read_text():
+            return card
+    return None
+
+
+def write_model_cards(card_dir: Path, larva_model: Optional[Path] = None,
+                      petri_model: Optional[Path] = None,
+                      cards_dir: Path = MODEL_CARDS_DIR) -> None:
+    """Ship the real card of each model used (SPECIFICATION.md 17).
+
+    A model with a card in model_cards/ gets that card copied verbatim under
+    the release's fixed file name; anything else gets the blank template, to
+    be filled in before release.
+    """
     common = (
         "## Model\n- model name:\n- model type:\n- YOLO version:\n\n"
         "## Training\n- training dataset:\n- classes:\n- annotation protocol:\n"
         "- number of images:\n- number of boxes/masks:\n- image resolution:\n"
         "- training command:\n\n## Validation\n- validation metrics:\n\n"
         "## Use\n- intended use:\n- not intended use:\n- known failure modes:\n")
-    (card_dir / "petri_detector_model_card.md").write_text(
-        "# Petri Detector Model Card\n\n" + common +
-        "\n## Notes\nSingle class `petri`; trained on full tray images, six "
-        "dishes per image (SPECIFICATION.md 3.1).\n")
-    (card_dir / "larva_segmenter_model_card.md").write_text(
-        "# Larva Segmenter Model Card\n\n" + common +
-        "\n## Segmentation specifics\n- mask annotation protocol:\n"
-        "- expected number of larvae per Petri: 0 or 1\n"
-        "- selection policy when multiple detections occur: continuity-first "
-        "(same track id > area gate > closest to previous > highest conf > "
-        "largest area), SPECIFICATION.md 6\n- area measurement limitations:\n")
+    templates = {
+        "petri_detector_model_card.md": (
+            petri_model,
+            "# Petri Detector Model Card\n\n" + common +
+            "\n## Notes\nSingle class `petri`; trained on full tray images, "
+            "six dishes per image (SPECIFICATION.md 3.1).\n"),
+        "larva_segmenter_model_card.md": (
+            larva_model,
+            "# Larva Segmenter Model Card\n\n" + common +
+            "\n## Segmentation specifics\n- mask annotation protocol:\n"
+            "- expected number of larvae per Petri: 0 or 1\n"
+            "- selection policy when multiple detections occur: "
+            "continuity-first (same track id > area gate > closest to "
+            "previous > highest conf > largest area), SPECIFICATION.md 6\n"
+            "- area measurement limitations:\n"),
+    }
+    for name, (model, template) in templates.items():
+        card = find_model_card(model, cards_dir)
+        (card_dir / name).write_text(card.read_text() if card else template)
 
 
 def write_readme(path: Path, args, n_dict_rows: int,
@@ -807,7 +847,7 @@ are **never** encoded as `0`.
   outside_petri, area_outlier, ambiguous_detection
 - `selection_reason`: single_detection, same_track_id, highest_confidence,
   closest_to_previous, area_filter, largest_area, no_detection, ambiguous,
-  rejected_implausible
+  rejected_implausible, reacquired
 
 ## Coordinate systems
 
@@ -851,8 +891,8 @@ hashes recorded in the provenance records.
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--out", required=True, type=Path)
-    p.add_argument("--dataset-id", default="wormstress_tmolitor_v1")
-    p.add_argument("--title", default="Wormstress Tenebrio molitor "
+    p.add_argument("--dataset-id", default="lsb_tmolitor_v1")
+    p.add_argument("--title", default="Tenebrio molitor "
                                       "behavioral phenotyping dataset")
     p.add_argument("--version", default="1.0.0")
     p.add_argument("--creators", default="",
@@ -875,6 +915,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tracker", type=lt.normalize_tracker_name,
                    choices=lt.TRACKERS, default="bytetrack")
     p.add_argument("--tracker-config", type=Path, default=None)
+    # Models and selection gate actually used (SPECIFICATION.md 6, 17, 26.6), so the
+    # release records them and ships the matching model cards.
+    p.add_argument("--larva-model", type=Path, default=tl.DEFAULT_LARVA_MODEL)
+    p.add_argument("--petri-model", type=Path, default=None)
+    p.add_argument("--max-jump-px", type=float, default=60.0)
+    p.add_argument("--max-jump-growth-px", type=float, default=5.0)
+    p.add_argument("--max-jump-cap-px", type=float, default=240.0)
+    p.add_argument("--reacquire-after-s", type=float,
+                   default=tl.DEFAULT_REACQUIRE_AFTER_S)
     p.add_argument("--smoothing-filter",
                    choices=("savgol", "moving_average", "kalman", "none"),
                    default="savgol")
@@ -909,7 +958,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     write_license(out / "LICENSE-DATA", args.license,
                   dataset_title=args.title, creators=creators_str,
                   dataset_id=args.dataset_id, version=args.version)
-    write_model_cards(out / "model_cards")
+    write_model_cards(out / "model_cards", args.larva_model, args.petri_model)
     write_readme(out / "README.md", args, n_rows, filter_desc)
 
     print(f"FAIR scaffold written to {out}")

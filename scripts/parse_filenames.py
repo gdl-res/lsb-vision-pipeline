@@ -255,7 +255,7 @@ def build_parser() -> argparse.ArgumentParser:
                    default=Path("experiment_metadata.draft.csv"),
                    help="draft CSV path (review then rename, never auto-apply)")
     p.add_argument("--profile", choices=["auto", "a", "b"], default="auto")
-    p.add_argument("--dataset-id", default="wormstress_tmolitor_v1")
+    p.add_argument("--dataset-id", default="lsb_tmolitor_v1")
     p.add_argument("--rows", type=int, default=3)
     p.add_argument("--cols", type=int, default=2)
     return p

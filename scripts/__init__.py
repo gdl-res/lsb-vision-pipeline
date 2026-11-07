@@ -1,4 +1,4 @@
-"""wormstress-vision pipeline scripts.
+"""lsb-vision-pipeline scripts.
 
 The modules in this package import one another by bare module name
 (e.g. ``import crop_petris_yolo_seg as cp``). That resolves automatically when a

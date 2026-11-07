@@ -88,6 +88,8 @@ def build_track_argv(video: Path, work_dir: Path, args) -> list[str]:
         argv += ["--area-min-px", str(args.area_min_px)]
     if args.area_max_px is not None:
         argv += ["--area-max-px", str(args.area_max_px)]
+    if args.reacquire_after_s is not None:
+        argv += ["--reacquire-after-s", str(args.reacquire_after_s)]
     if args.device is not None:
         argv += ["--device", args.device]
     if args.track:
@@ -125,6 +127,29 @@ def combine_tables(work_dir: Path, out: Path) -> None:
         with open(out / "larva" / "larva_masks.jsonl", "w") as dst:
             for mf in mask_files:
                 dst.write(mf.read_text())
+
+
+def copy_experiment_metadata(src: Path, out: Path) -> int:
+    """Ship the curated experiment_metadata.csv (SPECIFICATION.md 14) in the release.
+
+    Only rows for videos present in features_per_video.csv are kept, so the
+    release documents exactly the recordings it contains. Written before the
+    FAIR step, which then leaves it alone instead of dropping a blank template.
+    Returns the number of rows written.
+    """
+    import pandas as pd
+
+    meta = pd.read_csv(src, dtype={"video_id": str})
+    feat_path = out / "features" / "features_per_video.csv"
+    if feat_path.is_file():
+        videos = set(pd.read_csv(feat_path, usecols=["video_id"],
+                                 dtype={"video_id": str})["video_id"])
+        meta = meta[meta["video_id"].isin(videos)]
+    dest = out / "metadata" / "experiment_metadata.csv"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    meta.to_csv(dest, index=False)
+    print(f"  experiment metadata: {len(meta)} rows -> {dest}")
+    return len(meta)
 
 
 def gather_provenance(out: Path) -> None:
@@ -398,7 +423,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="video file or directory (required unless --skip-tracking)")
     p.add_argument("--out", required=True, type=Path)
     p.add_argument("--petri-model", type=Path)
-    p.add_argument("--larva-model", type=Path)
+    p.add_argument("--larva-model", type=Path, default=tl.DEFAULT_LARVA_MODEL,
+                   help="larva segmenter weights (default: the crop-trained "
+                        "v1.2 model, SPECIFICATION.md 26.6)")
     p.add_argument("--skip-tracking", action="store_true",
                    help="run analysis only on already-combined tables")
     # batch resilience
@@ -453,6 +480,10 @@ def build_parser() -> argparse.ArgumentParser:
                         "(additive)")
     p.add_argument("--max-jump-cap-px", type=float, default=240.0,
                    help="absolute ceiling on the jump gate")
+    p.add_argument("--reacquire-after-s", type=float,
+                   default=tl.DEFAULT_REACQUIRE_AFTER_S,
+                   help="passed to track_larvae_video.py (gate "
+                        "re-acquisition; default 5 s, 0 disables)")
     p.add_argument("--device", type=str, default=None)
     p.add_argument("--petri-diameter-mm", type=float, default=None)
     p.add_argument("--save-masks", action="store_true")
@@ -501,9 +532,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--divergence-exclude-self", action="store_true",
                    help="leave-one-out reference for control dishes")
     # identifiers / FAIR
-    p.add_argument("--dataset-id", default="wormstress_tmolitor_v1")
+    p.add_argument("--dataset-id", default="lsb_tmolitor_v1")
     p.add_argument("--experiment-id", default="")
-    p.add_argument("--title", default="Wormstress Tenebrio molitor "
+    p.add_argument("--title", default="Tenebrio molitor "
                                       "behavioral phenotyping dataset")
     p.add_argument("--version", default="1.0.0")
     p.add_argument("--creators", default="")
@@ -562,13 +593,26 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     run_analysis_chain(out, args)
 
+    if args.metadata is not None:
+        copy_experiment_metadata(args.metadata, out)
+
+    model_argv = []
+    for flag, mp in (("--larva-model", args.larva_model),
+                     ("--petri-model", args.petri_model)):
+        if mp is not None:
+            model_argv += [flag, str(mp)]
     run_step("FAIR metadata", fm.main,
+             model_argv +
              ["--out", str(out), "--dataset-id", args.dataset_id,
               "--title", args.title, "--version", args.version,
               "--creators", args.creators, "--contact", args.contact,
               "--license", args.license,
               "--code-license", args.code_license, "--no-pip-freeze",
               "--tracker", args.tracker,
+              "--max-jump-px", str(args.max_jump_px),
+              "--max-jump-growth-px", str(args.max_jump_growth_px),
+              "--max-jump-cap-px", str(args.max_jump_cap_px),
+              "--reacquire-after-s", str(args.reacquire_after_s),
               "--smoothing-filter", args.smoothing_filter,
               "--smoothing-window", str(args.smoothing_window),
               "--savgol-polyorder", str(args.savgol_polyorder),

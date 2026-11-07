@@ -89,7 +89,12 @@ def load_dataset(dataset: Path) -> dict:
     batch_path = dataset / "metadata" / "batch_index.json"
     batch = json.loads(batch_path.read_text()) if batch_path.is_file() else None
 
-    return {"features": feat, "qc": qc, "description": desc, "batch": batch}
+    meta_path = dataset / "metadata" / "experiment_metadata.csv"
+    meta = (pd.read_csv(meta_path, dtype={"video_id": str})
+            if meta_path.is_file() else pd.DataFrame())
+
+    return {"features": feat, "qc": qc, "description": desc, "batch": batch,
+            "metadata": meta}
 
 
 def qc_verdict(qc_row) -> tuple[str, str]:
@@ -113,6 +118,11 @@ def build_rows(data: dict) -> list[dict]:
     if not qc.empty:
         for _, r in qc.iterrows():
             qc_idx[(r["video_id"], int(r["dish_id"]))] = r
+    meta = data.get("metadata")
+    meta_idx = {}
+    if meta is not None and not meta.empty and "treatment" in meta.columns:
+        for _, r in meta.iterrows():
+            meta_idx[(str(r["video_id"]), int(r["dish_id"]))] = r
 
     rows = []
     for _, fr in feat.sort_values(["video_id", "dish_id"]).iterrows():
@@ -129,7 +139,8 @@ def build_rows(data: dict) -> list[dict]:
         rows.append({
             "video_id": fr["video_id"],
             "dish_id": int(fr["dish_id"]),
-            "treatment": _treatment(fr, qr),
+            "treatment": _treatment(fr, qr,
+                                    meta_idx.get((str(key[0]), key[1]))),
             "quality_score": _num(fr.get("quality_score")),
             "valid_fraction": _num(fr.get("valid_fraction")),
             "track_switches": _num(fr.get("track_switch_count"), "{:.0f}"),
@@ -140,8 +151,8 @@ def build_rows(data: dict) -> list[dict]:
     return rows
 
 
-def _treatment(feat_row, qc_row) -> str:
-    for src in (feat_row, qc_row):
+def _treatment(feat_row, qc_row, meta_row=None) -> str:
+    for src in (feat_row, qc_row, meta_row):
         if src is not None:
             t = src.get("treatment")
             if isinstance(t, str) and t:

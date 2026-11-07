@@ -40,6 +40,15 @@ import larva_trackers as lt
 
 LARVA_CLASS_ID = 0  # SPECIFICATION.md 3.2
 
+# v1.2 defaults (SPECIFICATION.md 26.6). The larva segmenter is the crop-trained
+# YOLO11s (input domain = the Petri crops this script feeds it) and gate
+# re-acquisition is on. v1 is reproduced with
+#   --larva-model weights/larvae/lsb_yolo11s_20260630v1.pt --reacquire-after-s 0
+PIPELINE_VERSION = "v1.2"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_LARVA_MODEL = REPO_ROOT / "weights" / "larvae" / "lsb_yolo11s_crop_seg_v1.pt"
+DEFAULT_REACQUIRE_AFTER_S = 5.0
+
 # --------------------------------------------------------------------------- #
 # CSV schemas (column order is part of the FAIR contract)
 # --------------------------------------------------------------------------- #
@@ -229,6 +238,93 @@ def select_primary_larva(
 
     best = max(cand, key=lambda i: dets[i].area_px)
     return best, "largest_area", True  # ambiguous: no track/centroid/conf signal
+
+
+@dataclass
+class Challenger:
+    """A lone detection the jump gate keeps rejecting, followed over time."""
+    centroid: tuple[float, float]
+    track_id: Optional[int]
+    first_frame: int
+    last_frame: int
+    n_seen: int
+
+
+def reacquire_step(
+    dets: list[LarvaDetection],
+    idx: Optional[int],
+    reason: str,
+    challenger: Optional[Challenger],
+    frame_idx: int,
+    reacquire_frames: Optional[int],
+    area_min: Optional[float],
+    area_max: Optional[float],
+    max_jump_px: Optional[float],
+    jump_growth_px: float = 5.0,
+    jump_cap_px: Optional[float] = 240.0,
+    min_support: float = 0.5,
+) -> tuple[Optional[int], str, Optional[Challenger]]:
+    """Gate re-acquisition: lets a persistently rejected detection take over.
+
+    Returns (idx, reason, challenger) to use in place of the
+    select_primary_larva result. Disabled (input passed through, no
+    challenger kept) when reacquire_frames is falsy.
+
+    Lockout: the jump gate (select_primary_larva) can anchor on a transient
+    non-larva -- typically the operator's hand or vial at the crop edge while
+    the larva is placed. The anchor is never confirmed again, so every later
+    detection of the real larva (> jump_cap_px away) is `rejected_implausible`,
+    sometimes for the rest of the video. The gate only ever compares against
+    the last *accepted* centroid, so nothing inside it can break the lockout.
+
+    Rule: rejected lone detections that are spatially continuous with one
+    another (same raw track id, or within the gate's own jump limit of the
+    previous rejected position) form a challenger. Once the challenger has
+    persisted for reacquire_frames, with the anchor unconfirmed throughout and
+    detections in at least min_support of those frames, it is promoted to
+    primary as "reacquired". Any accepted frame resets the challenger, so a
+    transient artifact can never win while the real larva keeps being
+    detected; that is the case the gate was built for, and it is unchanged.
+    """
+    if not reacquire_frames:
+        return idx, reason, None
+    if reason != "rejected_implausible":
+        if idx is not None:  # anchor (or a plausible successor) confirmed
+            return idx, reason, None
+        if challenger is not None and \
+                frame_idx - challenger.last_frame > reacquire_frames:
+            challenger = None  # challenger vanished: stale
+        return idx, reason, challenger
+
+    d = dets[0]  # the gate only rejects lone detections
+    if area_min is not None and d.area_px < area_min:
+        return idx, reason, challenger
+    if area_max is not None and d.area_px > area_max:
+        return idx, reason, challenger
+
+    continuous = False
+    if challenger is not None:
+        if d.track_id is not None and d.track_id == challenger.track_id:
+            continuous = True
+        else:
+            gap = frame_idx - challenger.last_frame - 1
+            limit = (max_jump_px or 0.0) + max(gap, 0) * jump_growth_px
+            if jump_cap_px is not None:
+                limit = min(limit, jump_cap_px)
+            px, py = challenger.centroid
+            continuous = math.hypot(d.cx - px, d.cy - py) <= limit
+    if continuous:
+        challenger = Challenger((d.cx, d.cy), d.track_id,
+                                challenger.first_frame, frame_idx,
+                                challenger.n_seen + 1)
+    else:
+        challenger = Challenger((d.cx, d.cy), d.track_id,
+                                frame_idx, frame_idx, 1)
+
+    span = frame_idx - challenger.first_frame + 1
+    if span >= reacquire_frames and challenger.n_seen >= min_support * span:
+        return 0, "reacquired", None
+    return idx, reason, challenger
 
 
 def polygon_morphology(poly_px: np.ndarray) -> dict:
@@ -575,6 +671,7 @@ def write_provenance(out: Path, args, n_frames: int) -> None:
         "run_id": datetime.now().strftime("%Y-%m-%dT%H-%M-%S_track"),
         "timestamp": datetime.now(timezone.utc).astimezone().isoformat(),
         "script": "scripts/track_larvae_video.py",
+        "pipeline_version": PIPELINE_VERSION,
         "git_commit": cp.git_commit(),
         "command": " ".join(sys.argv),
         "input_paths": [str(args.video)],
@@ -598,6 +695,7 @@ def write_provenance(out: Path, args, n_frames: int) -> None:
             "max_jump_px": args.max_jump_px,
             "max_jump_growth_px": args.max_jump_growth_px,
             "max_jump_cap_px": args.max_jump_cap_px,
+            "reacquire_after_s": args.reacquire_after_s,
             "petri_diameter_mm": args.petri_diameter_mm,
             "distortion_aspect_tol": args.distortion_aspect_tol,
             "petri_geometry": args.petri_geometry,
@@ -629,7 +727,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--video", required=True, type=Path)
     p.add_argument("--out", required=True, type=Path)
     p.add_argument("--petri-model", required=True, type=Path)
-    p.add_argument("--larva-model", required=True, type=Path)
+    p.add_argument("--larva-model", type=Path, default=DEFAULT_LARVA_MODEL,
+                   help="larva segmenter weights (default: the crop-trained "
+                        "v1.2 model, SPECIFICATION.md 26.6)")
     p.add_argument("--rows", type=int, default=3)
     p.add_argument("--cols", type=int, default=2)
     p.add_argument("--margin", type=float, default=0.05)
@@ -681,6 +781,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-jump-cap-px", type=float, default=240.0,
                    help="absolute ceiling on the jump gate regardless of how "
                         "long the track has been unconfirmed")
+    p.add_argument("--reacquire-after-s", type=float,
+                   default=DEFAULT_REACQUIRE_AFTER_S,
+                   help="gate re-acquisition: promote a lone detection the "
+                        "jump gate has rejected continuously for this many "
+                        "seconds (anchor unconfirmed throughout) to primary, "
+                        "selection_reason 'reacquired'. Breaks the lockout "
+                        "where the gate anchors on the operator's hand at "
+                        "larva placement. Default 5 s (v1.2); 0 disables "
+                        "it (v1 behaviour)")
     # Petri detection policy (SPECIFICATION.md 5)
     p.add_argument("--detect-petri-first-frame", action="store_true",
                    default=True)
@@ -693,7 +802,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--smoothing-window", type=int, default=7)
     p.add_argument("--immobility-speed-threshold-mm-s", type=float, default=1.0)
     # identifiers / limits
-    p.add_argument("--dataset-id", type=str, default="wormstress_tmolitor_v1")
+    p.add_argument("--dataset-id", type=str, default="lsb_tmolitor_v1")
     p.add_argument("--experiment-id", type=str, default="")
     p.add_argument("--video-id", type=str, default=None)
     p.add_argument("--device", type=str, default=None)
@@ -753,6 +862,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     prev: dict[int, dict] = {d: {"track_id": None, "centroid": None,
                                   "missing_streak": 0}
                              for d in range(1, n_dishes + 1)}
+    challengers: dict[int, Optional[Challenger]] = {
+        d: None for d in range(1, n_dishes + 1)}
+    reacquire_frames = (round(args.reacquire_after_s * fps)
+                        if args.reacquire_after_s else None)
     frame_idx = 0
     try:
         while True:
@@ -792,6 +905,11 @@ def main(argv: Optional[list[str]] = None) -> int:
                     missing_streak=pstate["missing_streak"],
                     jump_growth_px=args.max_jump_growth_px,
                     jump_cap_px=args.max_jump_cap_px)
+                idx, reason, challengers[dg.dish_id] = reacquire_step(
+                    dets, idx, reason, challengers[dg.dish_id], frame_idx,
+                    reacquire_frames, args.area_min_px, args.area_max_px,
+                    args.max_jump_px, args.max_jump_growth_px,
+                    args.max_jump_cap_px)
 
                 _, _, erad = effective_geometry(dg)
                 mm = (args.petri_diameter_mm / (2 * erad)

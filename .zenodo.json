@@ -45,6 +45,22 @@
       "identifier": "10.5281/zenodo.23686766",
       "relation": "isSupplementedBy",
       "resource_type": "dataset"
+    },
+    {
+      "identifier": "10.5281/zenodo.24015683",
+      "relation": "isSupplementedBy",
+      "resource_type": "dataset"
+    },
+    {
+      "identifier": "10.5281/zenodo.24015680",
+      "relation": "isSupplementedBy",
+      "resource_type": "dataset"
+    },
+    {
+      "identifier": "10.5281/zenodo.24015682",
+      "relation": "isSupplementedBy",
+      "resource_type": "dataset"
     }
-  ]
+  ],
+  "version": "1.2.0"
 }

@@ -234,3 +234,92 @@ def test_legacy_yaml_tracker_spelling_still_parses():
 def test_unknown_tracker_is_rejected():
     with pytest.raises(SystemExit):
         _parse("--tracker", "deepsort")
+
+
+# --- gate re-acquisition (lockout fix) -------------------------------------- #
+def _run_reacq(frames, reacquire_frames, anchor=(10.0, 10.0), **kw):
+    """Drive select_primary_larva + reacquire_step over per-frame detections,
+    updating state exactly as the video loop does. Returns the reasons."""
+    prev_tid, prev_c, streak, ch = 5, anchor, 0, None
+    reasons = []
+    for f, dets in enumerate(frames):
+        idx, reason, _ = tl.select_primary_larva(
+            dets, prev_tid, prev_c, None, None, max_jump_px=20.0,
+            missing_streak=streak, jump_growth_px=5.0, jump_cap_px=60.0)
+        idx, reason, ch = tl.reacquire_step(
+            dets, idx, reason, ch, f, reacquire_frames, None, None,
+            20.0, 5.0, 60.0, **kw)
+        reasons.append(reason)
+        if idx is not None:
+            d = dets[idx]
+            prev_tid, prev_c, streak = d.track_id, (d.cx, d.cy), 0
+        else:
+            streak += 1
+    return reasons
+
+
+def test_reacquire_breaks_lockout():
+    # anchor at (10,10) (the hand); real larva far away, crawling slowly
+    frames = [[det(track_id=7, cx=300 + f, cy=300)] for f in range(20)]
+    reasons = _run_reacq(frames, reacquire_frames=10)
+    assert reasons[:9] == ["rejected_implausible"] * 9
+    assert reasons[9] == "reacquired"
+    # once re-anchored, the larva is followed normally
+    assert reasons[10:] == ["single_detection"] * 10
+
+
+def test_reacquire_disabled_passes_through():
+    frames = [[det(track_id=7, cx=300, cy=300)] for _ in range(50)]
+    assert set(_run_reacq(frames, reacquire_frames=None)) == {
+        "rejected_implausible"}
+
+
+def test_reacquire_reset_by_confirmed_anchor():
+    # the artifact case the gate was built for: a far lone artifact that keeps
+    # reappearing while the real larva (near the anchor) is still detected
+    frames = []
+    for f in range(40):
+        if f % 4 == 3:
+            frames.append([det(track_id=5, cx=12, cy=10)])  # real larva
+        else:
+            frames.append([det(track_id=8, cx=300, cy=300)])  # artifact
+    reasons = _run_reacq(frames, reacquire_frames=10)
+    assert "reacquired" not in reasons
+
+
+def test_reacquire_requires_continuity():
+    # rejected detections scattered around the dish never form a challenger
+    pts = [(300, 300), (100, 400), (400, 100), (250, 450)]
+    frames = [[det(track_id=None, cx=pts[f % 4][0], cy=pts[f % 4][1])]
+              for f in range(40)]
+    assert "reacquired" not in _run_reacq(frames, reacquire_frames=10)
+
+
+def test_reacquire_continuity_by_distance_without_track_ids():
+    frames = [[det(track_id=None, cx=300 + 2 * f, cy=300)] for f in range(12)]
+    assert _run_reacq(frames, reacquire_frames=10)[9] == "reacquired"
+
+
+def test_reacquire_tolerates_detection_gaps_but_needs_support():
+    # detected every other frame -> support 0.5 -> accepted at min_support 0.5
+    frames = [[det(track_id=7, cx=300, cy=300)] if f % 2 == 0 else []
+              for f in range(30)]
+    assert "reacquired" in _run_reacq(frames, reacquire_frames=10)
+    # every third frame -> support ~0.33 -> not enough
+    frames = [[det(track_id=7, cx=300, cy=300)] if f % 3 == 0 else []
+              for f in range(30)]
+    assert "reacquired" not in _run_reacq(frames, reacquire_frames=10)
+
+
+def test_reacquire_respects_area_gate():
+    # a lone blob outside the plausible area range is never promoted
+    frames = [[det(track_id=7, cx=300, cy=300, area=9000.0)]
+              for _ in range(30)]
+    prev_c, ch = (10.0, 10.0), None
+    for f, dets in enumerate(frames):
+        idx, reason, _ = tl.select_primary_larva(
+            dets, 5, prev_c, 100.0, 5000.0, max_jump_px=20.0,
+            missing_streak=f, jump_growth_px=5.0, jump_cap_px=60.0)
+        idx, reason, ch = tl.reacquire_step(
+            dets, idx, reason, ch, f, 10, 100.0, 5000.0, 20.0, 5.0, 60.0)
+        assert reason == "rejected_implausible"

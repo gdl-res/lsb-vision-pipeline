@@ -2,8 +2,8 @@ cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 title: "lsb-vision-pipeline: a modular computer-vision architecture for converting controlled multi-arena video assays into behavioral phenotyping data"
 type: software
-version: 1.1.0
-date-released: 2026-10-31
+version: 1.2.0
+date-released: 2026-11-07
 license: Apache-2.0
 repository-code: "https://github.com/gdl-res/lsb-vision-pipeline"
 keywords:
@@ -33,8 +33,19 @@ authors:
     affiliation: "Centro di Ricerca \"Enrico Piaggio\" and Dipartimento di Ingegneria dell'Informazione, University of Pisa"
 references:
   - type: dataset
-    title: "Wormstress Tenebrio molitor behavioral phenotyping dataset: derived data"
+    title: "Tenebrio molitor behavioral phenotyping dataset: derived tracking, kinematics, features and QC data (34 videos)"
+    version: 1.2.0
+    doi: 10.5281/zenodo.24015683
+  - type: dataset
+    title: "Tenebrio molitor behavioral phenotyping dataset: derived tracking, kinematics, features and QC data (34 videos)"
+    version: 1.0.0
     doi: 10.5281/zenodo.23686764
   - type: dataset
-    title: "Wormstress Tenebrio molitor behavioral phenotyping dataset: raw videos"
+    title: "Tenebrio molitor behavioral phenotyping dataset: raw tray videos (34 videos)"
     doi: 10.5281/zenodo.23686766
+  - type: dataset
+    title: "Tenebrio molitor larva trajectory ground truth: hand-checked masks and trajectories"
+    doi: 10.5281/zenodo.24015680
+  - type: dataset
+    title: "Tenebrio molitor behavioral phenotyping dataset: segmenter comparison supplementary data"
+    doi: 10.5281/zenodo.24015682
